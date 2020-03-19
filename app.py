@@ -42,7 +42,9 @@ def welcome():
         f"/api/v1.0/precipitation<br/>"
         f"/api/v1.0/stations<br/>"
         f"/api/v1.0/tobs<br/>"
-        f"/api/v1.0/temp/start/end"
+        f"/api/v1.0/temp/start<br/>"
+        f"/api/v1.0/temp/start/end<br/><br/>"
+        f"Date format for start/end dates should be MM-DD-YYYY"
     )
 
 @app.route("/api/v1.0/precipitation")
@@ -72,7 +74,7 @@ def stations():
     session = Session(engine)
 
     """Return a list of stations"""
-    # Query all precipitation
+    # Query all stations
     results = session.query(Station.station,Station.name).all()
     
     all_stations = []
@@ -90,12 +92,26 @@ def stations():
 def tobs():
     # Create our session (link) from Python to the DB
     session = Session(engine)
+    
+    # Create variables for start and end dates
+    results1 = session.query(Measurement.date).order_by(Measurement.date.desc()).first()
+    
+    for row in results1:
+        end_date = row
+    
+    end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+    start_date = end_date - dt.timedelta(days=365)
 
-    """Return a list of dates and precipiation"""
-    # Query all precipitation
-    results = session.query(Measurement.date,Measurement.tobs).all()
+    # Query all temperature for one year since last date posted
+    
+    results = session.query(Measurement.date, Measurement.tobs).\
+            filter(Measurement.date <= end_date).\
+            filter(Measurement.date >= start_date).\
+            order_by(Measurement.date.desc()).\
+            all()
     
     all_tobs = []
+    
     for date, tobs in results:
         tobs_dict = {}
         tobs_dict["date"] = date
@@ -106,42 +122,50 @@ def tobs():
 
     return jsonify(all_tobs)
 
-@app.route("/api/v1.0/temp/<start>/<end>")
-def temp(start,end):
-    """Fetch the Justice League character whose real_name matches
-       the path variable supplied by the user, or a 404 if not."""
-
-    # canonicalized = real_name.replace(" ", "").lower()
+@app.route("/api/v1.0/temp/<start>")
+def tempstart(start):
+    
+    start = datetime.strptime(start, '%m-%d-%Y')
     
     # Create our session (link) from Python to the DB
     session = Session(engine)
 
-    """Return a list of dates and precipiation"""
-    # Query all precipitation
-    results = session.query(Measurement.date,Measurement.tobs).all()
+    # Query MIN, AVG, MAX of temperatures = dates equal or greater than start date
+    results = list(\
+        session.query(Measurement).\
+        filter(Measurement.date >= start).\
+        values(func.min(Measurement.tobs),\
+           func.avg(Measurement.tobs),\
+           func.max(Measurement.tobs)))
+            
+    session.close()
+    
+    return jsonify(results)
+
+    return jsonify({"error": f"No data for temp from {start} found."}), 404
+
+@app.route("/api/v1.0/temp/<start>/<end>")
+def temp(start,end):
     
     start = datetime.strptime(start, '%m-%d-%Y')
     end = datetime.strptime(end, '%m-%d-%Y')
     
-    all_temps = []
-    all_tobs = []
-    
-    for date, tobs in results:
-        tobs_dict = {}
-        
-        date2 = datetime.strptime(date, '%Y-%m-%d')
-        
-        
-        tobs_dict["date"] = date
-        tobs_dict["tobs"] = tobs
-        all_tobs.append(tobs_dict)
+    # Create our session (link) from Python to the DB
+    session = Session(engine)
 
-        
-        if (date2 >= start and date2 <= end):
-            all_temps.append(tobs_dict)
+    
+    # Query MIN, AVG, MAX of temperatures of dates within start and end dates
+    results = list(\
+        session.query(Measurement).\
+        filter(Measurement.date <= end).\
+        filter(Measurement.date >= start).\
+        values(func.min(Measurement.tobs),\
+           func.avg(Measurement.tobs),\
+           func.max(Measurement.tobs)))
             
-            
-    return jsonify(all_temps)
+    session.close()
+    
+    return jsonify(results)
 
     return jsonify({"error": f"No data for {start} - {end} found."}), 404
 
